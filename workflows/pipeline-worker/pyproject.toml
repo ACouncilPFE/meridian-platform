@@ -1,0 +1,35 @@
+[project]
+name = "pipeline-worker"
+version = "1.0.0"
+description = "Temporal worker: incremental HIPAA Safe Harbor export from Aurora to Snowflake"
+requires-python = ">=3.12"
+dependencies = [
+  "temporalio>=1.8",
+  "psycopg[binary]>=3.2",
+  "boto3>=1.35",
+  "snowflake-connector-python>=3.12",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "pytest-asyncio>=0.24", "ruff>=0.6"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pipeline_worker"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 130
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "S", "ARG"]
+ignore = ["S101"]

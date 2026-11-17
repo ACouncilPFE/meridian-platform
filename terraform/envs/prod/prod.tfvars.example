@@ -1,0 +1,12 @@
+# Copy to prod.tfvars (gitignored) or supply via CI variables.
+certificate_arn          = "arn:aws:acm:us-east-1:111111111111:certificate/00000000-0000-0000-0000-000000000000"
+intake_api_image         = "111111111111.dkr.ecr.us-east-1.amazonaws.com/intake-api@sha256:..."
+pipeline_worker_image    = "111111111111.dkr.ecr.us-east-1.amazonaws.com/pipeline-worker@sha256:..."
+temporal_address         = "meridian-prod.abcde.tmprl.cloud:7233"
+temporal_mtls_secret_arn = "arn:aws:secretsmanager:us-east-1:111111111111:secret:temporal/mtls"
+tempo_otlp_endpoint      = "tempo.internal.meridian:4317"
+nat_egress_cidrs         = ["203.0.113.10/32", "203.0.113.11/32", "203.0.113.12/32"]
+snowflake_organization   = "MERIDIANORG"
+snowflake_account        = "PROD"
+snowflake_s3_role_arn    = "arn:aws:iam::111111111111:role/snowflake-stage-reader"
+grafana_admin_group_ids  = ["00000000-platform-admins"]

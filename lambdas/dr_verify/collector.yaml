@@ -1,0 +1,28 @@
+# ADOT Lambda layer collector: OTLP from the function -> Amazon Managed Prometheus.
+extensions:
+  sigv4auth:
+    service: aps
+    region: ${env:AWS_REGION}
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+      http:
+        endpoint: localhost:4318
+
+exporters:
+  prometheusremotewrite:
+    endpoint: ${env:AMP_REMOTE_WRITE_URL}
+    auth:
+      authenticator: sigv4auth
+    resource_to_telemetry_conversion:
+      enabled: true
+
+service:
+  extensions: [sigv4auth]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      exporters: [prometheusremotewrite]

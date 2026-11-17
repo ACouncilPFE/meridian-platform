@@ -1,0 +1,80 @@
+# Production delivery: build once, sign, deploy the same digest everywhere.
+# Gated by the `production` GitHub environment (required reviewers), which is
+# also the only OIDC subject the apply role trusts.
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      intake: ${{ steps.push.outputs.intake }}
+      worker: ${{ steps.push.outputs.worker }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: us-east-1
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: sigstore/cosign-installer@v3
+      - name: Build, push, sign, attach SBOM
+        id: push
+        run: |
+          for svc in intake-api:services/intake-api pipeline-worker:workflows/pipeline-worker; do
+            name="${svc%%:*}"; ctx="${svc#*:}"
+            img="${{ steps.ecr.outputs.registry }}/$name:${{ github.sha }}"
+            docker build --label org.opencontainers.image.revision=${{ github.sha }} -t "$img" "$ctx"
+            docker push "$img"
+            digest=$(docker inspect --format='{{index .RepoDigests 0}}' "$img")
+            cosign sign --yes "$digest"
+            key=$( [ "$name" = intake-api ] && echo intake || echo worker )
+            echo "$key=$digest" >> "$GITHUB_OUTPUT"
+          done
+
+  deploy-prod:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: 1.9.8 }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Build DR lambda bundle
+        run: make lambda-build
+      - name: Run DB migrations (one-off Fargate task, expand-only)
+        run: scripts/ci/run-migrations.sh prod "${{ needs.build.outputs.intake }}"
+      - name: Terraform apply
+        working-directory: terraform/envs/prod
+        run: |
+          terraform init -input=false
+          terraform apply -auto-approve -input=false -var-file=prod.tfvars \
+            -var intake_api_image="${{ needs.build.outputs.intake }}" \
+            -var pipeline_worker_image="${{ needs.build.outputs.worker }}"
+      - name: Wait for ECS steady state (circuit breaker rolls back on failure)
+        run: aws ecs wait services-stable --cluster meridian-prod --services intake-api pipeline-worker
+      - name: Post-deploy SLO gate
+        # Abort (and alert) if the error budget burns fast in the 10 min after deploy.
+        run: scripts/ci/slo_gate.sh --minutes 10 --max-burn-rate 14.4

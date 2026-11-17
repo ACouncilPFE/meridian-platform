@@ -1,0 +1,28 @@
+# Security signals around PHI. These page security, not just platform.
+groups:
+  - name: phi-security
+    rules:
+      - alert: PhiDecryptFailures
+        # Any decrypt failure means tampering, key policy drift, or a bug that
+        # corrupted ciphertext. None are acceptable.
+        expr: increase(phi_decrypt_failures_total[10m]) > 0
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "PHI field decryption failures on {{ $labels.service }}"
+          runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/phi-decrypt-failure.md"
+
+      - alert: PhiAccessAnomaly
+        # Read volume 4x above the same hour last week: possible scraping or
+        # a compromised credential (HIPAA 164.308(a)(1)(ii)(D) activity review).
+        expr: |
+          sum by (env) (rate(phi_access_total{action=~"read|search"}[15m]))
+          > 4 * sum by (env) (rate(phi_access_total{action=~"read|search"}[15m] offset 1w))
+          and sum by (env) (rate(phi_access_total{action=~"read|search"}[15m])) > 1
+        for: 15m
+        labels:
+          severity: critical
+          team: security
+        annotations:
+          summary: "PHI read rate 4x above weekly baseline in {{ $labels.env }}"

@@ -1,0 +1,34 @@
+# On-demand DR drill (the weekly one runs from EventBridge Scheduler in AWS).
+# Useful before audits or after changing backup/KMS configuration.
+name: dr-drill
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  drill:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DR_ROLE_ARN }}
+          aws-region: us-east-1
+      - name: Start restore drill and wait
+        run: |
+          arn=$(aws stepfunctions start-execution \
+            --state-machine-arn "${{ vars.DR_DRILL_STATE_MACHINE_ARN }}" \
+            --input '{"trigger":"manual","actor":"${{ github.actor }}"}' \
+            --query executionArn --output text)
+          echo "execution: $arn"
+          while true; do
+            status=$(aws stepfunctions describe-execution --execution-arn "$arn" --query status --output text)
+            [ "$status" = RUNNING ] || break
+            sleep 60
+          done
+          echo "final status: $status"
+          [ "$status" = SUCCEEDED ]

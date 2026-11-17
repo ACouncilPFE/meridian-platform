@@ -1,0 +1,8 @@
+# Platform owns the paved road; security co-owns anything touching PHI,
+# IAM, encryption or policy-as-code exceptions.
+*                                          @OWNER
+/terraform/modules/kms/                    @OWNER
+/terraform/bootstrap/                      @OWNER
+/.checkov.yml                              @OWNER
+/services/intake-api/src/intake_api/crypto.py        @OWNER
+/workflows/pipeline-worker/src/pipeline_worker/deidentify.py  @OWNER

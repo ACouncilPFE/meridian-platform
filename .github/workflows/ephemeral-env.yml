@@ -1,0 +1,107 @@
+# Preview environment per pull request: full stack (Aurora + API) with
+# synthetic data. Created on open/sync, destroyed on close. Reaper below
+# catches anything that leaks.
+name: ephemeral-env
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed, labeled]
+  schedule:
+    - cron: "0 6 * * *"   # nightly reaper
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: ephemeral-${{ github.event.pull_request.number || 'reaper' }}
+  cancel-in-progress: false   # never interrupt a terraform apply/destroy
+
+env:
+  TF_VERSION: 1.9.8
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    if: github.event_name == 'pull_request' && github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'preview')
+    runs-on: ubuntu-latest
+    environment:
+      name: pr-${{ github.event.pull_request.number }}
+      url: ${{ steps.out.outputs.url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - name: Build & push image (tagged by commit, deployed by digest)
+        id: img
+        run: |
+          IMAGE="${{ steps.ecr.outputs.registry }}/intake-api"
+          docker build -t "$IMAGE:${{ github.sha }}" services/intake-api
+          docker push "$IMAGE:${{ github.sha }}"
+          echo "ref=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")" >> "$GITHUB_OUTPUT"
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
+      - name: Apply
+        working-directory: terraform/envs/ephemeral
+        run: |
+          terraform init -input=false
+          terraform workspace select -or-create "pr-${{ github.event.pull_request.number }}"
+          terraform apply -auto-approve -input=false \
+            -var pr_number=${{ github.event.pull_request.number }} \
+            -var image="${{ steps.img.outputs.ref }}"
+      - id: out
+        working-directory: terraform/envs/ephemeral
+        run: echo "url=$(terraform output -raw url)" >> "$GITHUB_OUTPUT"
+      - name: Migrate + seed synthetic data
+        run: |
+          scripts/ci/run-migrations.sh "pr-${{ github.event.pull_request.number }}" "${{ steps.img.outputs.ref }}"
+          python3 scripts/seed_synthetic.py --url "${{ steps.out.outputs.url }}" --count 200
+      - name: Smoke test
+        run: scripts/ci/smoke.sh "${{ steps.out.outputs.url }}"
+      - uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: preview
+          message: |
+            🚀 Preview environment ready: ${{ steps.out.outputs.url }}
+            Synthetic data only. Auto-destroyed on PR close or after 72h.
+            Metrics/traces: Grafana → `env="ephemeral", service="pr-${{ github.event.pull_request.number }}-intake"`
+
+  destroy:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+      - working-directory: terraform/envs/ephemeral
+        run: |
+          terraform init -input=false
+          if terraform workspace select "pr-${{ github.event.pull_request.number }}"; then
+            terraform destroy -auto-approve -input=false \
+              -var pr_number=${{ github.event.pull_request.number }} -var image=unused
+            terraform workspace select default
+            terraform workspace delete "pr-${{ github.event.pull_request.number }}"
+          fi
+
+  reaper:
+    if: github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "${{ env.TF_VERSION }}" }
+      - name: Destroy expired preview environments
+        run: python3 scripts/ci/reap_ephemeral.py --dir terraform/envs/ephemeral

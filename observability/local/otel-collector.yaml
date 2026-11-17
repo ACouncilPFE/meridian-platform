@@ -1,0 +1,38 @@
+# Local stand-in for the ADOT sidecar: receives OTLP traces from services,
+# scrubs PHI-prone attributes (same processor as prod), forwards to Tempo.
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch: {}
+  attributes/scrub_phi:
+    actions:
+      - key: http.request.body
+        action: delete
+      - key: db.statement
+        action: hash
+      - key: enduser.id
+        action: hash
+      - key: url.query
+        action: delete
+
+exporters:
+  otlp/tempo:
+    endpoint: tempo:4317
+    tls:
+      insecure: true
+
+service:
+  telemetry:
+    metrics:
+      address: 0.0.0.0:8888
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [attributes/scrub_phi, batch]
+      exporters: [otlp/tempo]

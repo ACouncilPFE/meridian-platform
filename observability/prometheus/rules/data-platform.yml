@@ -1,0 +1,64 @@
+# Data infrastructure: backups, DR drills, pipeline freshness, Temporal health.
+groups:
+  - name: dr-and-backups
+    rules:
+      - alert: DRDrillFailed
+        expr: min by (cluster) (dr_drill_success) == 0
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Weekly restore drill FAILED for {{ $labels.cluster }}: backups may not be restorable"
+          runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/disaster-recovery.md"
+
+      - alert: DRDrillStale
+        # No successful drill in 8 days = SOC 2 availability control gap.
+        expr: time() - max by (cluster) (dr_drill_last_run_timestamp_seconds) > 8 * 86400
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "No DR drill for {{ $labels.cluster }} in over 8 days"
+
+      - alert: DRDrillRPOBreached
+        # PITR: latest restorable time should trail real time by ~5 min.
+        expr: max by (cluster) (dr_drill_rpo_seconds) > 900
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Restore point was {{ $value | humanizeDuration }} behind (RPO target 15m)"
+
+  - name: temporal-workers
+    rules:
+      - alert: TemporalScheduleToStartHigh
+        # Tasks are waiting for a worker: under-provisioned or workers crashing.
+        expr: |
+          histogram_quantile(0.95, sum by (le, task_queue) (
+            rate(temporal_activity_schedule_to_start_latency_bucket[5m]))) > 30
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Temporal queue {{ $labels.task_queue }} p95 schedule-to-start > 30s"
+
+      - alert: DeidentifiedExportStale
+        expr: sum(increase(temporal_workflow_completed{workflow_type="DeidentifyExportWorkflow"}[26h])) == 0
+        labels:
+          severity: warning
+          team: data
+        annotations:
+          summary: "Snowflake de-identified export hasn't completed in 26h"
+
+  # CloudWatch RDS metrics enter Prometheus via YACE (yet-another-cloudwatch-exporter).
+  - name: aurora
+    rules:
+      - alert: AuroraReplicaLagHigh
+        expr: max by (dbcluster) (aws_rds_aurora_replica_lag_maximum) > 1000
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Aurora replica lag {{ $value }}ms on {{ $labels.dbcluster }}"

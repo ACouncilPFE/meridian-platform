@@ -1,0 +1,132 @@
+{
+  "Comment": "Weekly Aurora restore drill: PITR-restore to latest restorable time, verify, measure RTO/RPO, tear down.",
+  "StartAt": "RecordStart",
+  "States": {
+    "RecordStart": {
+      "Type": "Pass",
+      "Parameters": { "started_at.$": "$$.State.EnteredTime" },
+      "ResultPath": "$.timing",
+      "Next": "FindRestorePoint"
+    },
+    "FindRestorePoint": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:describeDBClusters",
+      "Parameters": { "DbClusterIdentifier": "${source_cluster_id}" },
+      "ResultSelector": {
+        "latest_restorable.$": "$.DbClusters[0].LatestRestorableTime"
+      },
+      "ResultPath": "$.restore_point",
+      "Next": "RestoreCluster"
+    },
+    "RestoreCluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:restoreDBClusterToPointInTime",
+      "Parameters": {
+        "SourceDbClusterIdentifier": "${source_cluster_id}",
+        "DbClusterIdentifier": "${drill_cluster_id}",
+        "UseLatestRestorableTime": true,
+        "DbSubnetGroupName": "${subnet_group_name}",
+        "VpcSecurityGroupIds": ["${security_group_id}"],
+        "KmsKeyId": "${kms_key_arn}",
+        "EnableIAMDatabaseAuthentication": true,
+        "DeletionProtection": false,
+        "ServerlessV2ScalingConfiguration": { "MinCapacity": 0.5, "MaxCapacity": 4 },
+        "Tags": [
+          { "Key": "purpose", "Value": "dr-drill" },
+          { "Key": "data:classification", "Value": "phi" }
+        ]
+      },
+      "ResultPath": null,
+      "Retry": [{ "ErrorEquals": ["Rds.DbClusterAlreadyExistsException"], "MaxAttempts": 0 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
+      "Next": "CreateInstance"
+    },
+    "CreateInstance": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:createDBInstance",
+      "Parameters": {
+        "DbInstanceIdentifier": "${drill_cluster_id}-0",
+        "DbClusterIdentifier": "${drill_cluster_id}",
+        "DbInstanceClass": "${instance_class}",
+        "Engine": "aurora-postgresql"
+      },
+      "ResultPath": null,
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
+      "Next": "WaitForInstance"
+    },
+    "WaitForInstance": {
+      "Type": "Wait",
+      "Seconds": 60,
+      "Next": "CheckInstance"
+    },
+    "CheckInstance": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:describeDBInstances",
+      "Parameters": { "DbInstanceIdentifier": "${drill_cluster_id}-0" },
+      "ResultSelector": {
+        "status.$": "$.DbInstances[0].DbInstanceStatus",
+        "endpoint.$": "$.DbInstances[0].Endpoint.Address"
+      },
+      "ResultPath": "$.instance",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
+      "Next": "InstanceReady?"
+    },
+    "InstanceReady?": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.instance.status", "StringEquals": "available", "Next": "Verify" }
+      ],
+      "Default": "WaitForInstance"
+    },
+    "Verify": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::lambda:invoke",
+      "Parameters": {
+        "FunctionName": "${verify_lambda_arn}",
+        "Payload": {
+          "endpoint.$": "$.instance.endpoint",
+          "restore_point_at.$": "$.restore_point.latest_restorable",
+          "drill_started_at.$": "$.timing.started_at",
+          "source_cluster": "${source_cluster_id}"
+        }
+      },
+      "ResultSelector": { "result.$": "$.Payload" },
+      "ResultPath": "$.verification",
+      "Retry": [{ "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"], "MaxAttempts": 3, "BackoffRate": 2 }],
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
+      "Next": "Cleanup"
+    },
+    "Cleanup": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:deleteDBInstance",
+      "Parameters": { "DbInstanceIdentifier": "${drill_cluster_id}-0", "SkipFinalSnapshot": true },
+      "ResultPath": null,
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": null, "Next": "DeleteCluster" }],
+      "Next": "WaitForInstanceDelete"
+    },
+    "WaitForInstanceDelete": {
+      "Type": "Wait",
+      "Seconds": 300,
+      "Next": "DeleteCluster"
+    },
+    "DeleteCluster": {
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:deleteDBCluster",
+      "Parameters": { "DbClusterIdentifier": "${drill_cluster_id}", "SkipFinalSnapshot": true },
+      "ResultPath": null,
+      "Retry": [{ "ErrorEquals": ["Rds.InvalidDbClusterStateException"], "IntervalSeconds": 120, "MaxAttempts": 10 }],
+      "Catch": [{ "ErrorEquals": ["Rds.DbClusterNotFoundException"], "ResultPath": null, "Next": "Outcome" }],
+      "Next": "Outcome"
+    },
+    "Outcome": {
+      "Type": "Choice",
+      "Choices": [
+        { "Variable": "$.error", "IsPresent": true, "Next": "DrillFailed" },
+        { "Variable": "$.verification.result.passed", "BooleanEquals": true, "Next": "DrillPassed" }
+      ],
+      "Default": "DrillFailed"
+    },
+    "DrillPassed": { "Type": "Succeed" },
+    "DrillFailed": { "Type": "Fail", "Error": "DRDrillFailed", "Cause": "Restore or verification failed; see execution history." }
+  }
+}

@@ -1,0 +1,66 @@
+# SLO: intake-api availability 99.9% / 30d, latency p99 < 500ms.
+# Multi-window, multi-burn-rate alerts (Google SRE workbook, ch. 5): page on
+# fast burn (2% of budget in 1h), ticket on slow burn (10% in 3d).
+groups:
+  - name: intake-api-sli-recording
+    interval: 30s
+    rules:
+      - record: sli:http_requests:rate5m
+        expr: sum by (service, env) (rate(http_requests_total{service="intake-api"}[5m]))
+      - record: sli:http_errors:ratio_rate5m
+        expr: |
+          sum by (service, env) (rate(http_requests_total{service="intake-api", status="5xx"}[5m]))
+          / sum by (service, env) (rate(http_requests_total{service="intake-api"}[5m]))
+      - record: sli:http_errors:ratio_rate30m
+        expr: |
+          sum by (service, env) (rate(http_requests_total{service="intake-api", status="5xx"}[30m]))
+          / sum by (service, env) (rate(http_requests_total{service="intake-api"}[30m]))
+      - record: sli:http_errors:ratio_rate1h
+        expr: |
+          sum by (service, env) (rate(http_requests_total{service="intake-api", status="5xx"}[1h]))
+          / sum by (service, env) (rate(http_requests_total{service="intake-api"}[1h]))
+      - record: sli:http_errors:ratio_rate6h
+        expr: |
+          sum by (service, env) (rate(http_requests_total{service="intake-api", status="5xx"}[6h]))
+          / sum by (service, env) (rate(http_requests_total{service="intake-api"}[6h]))
+      - record: sli:http_latency:p99_5m
+        expr: |
+          histogram_quantile(0.99,
+            sum by (le, service, env, route) (rate(http_request_duration_seconds_bucket{service="intake-api"}[5m])))
+
+  - name: intake-api-slo-alerts
+    rules:
+      - alert: IntakeApiErrorBudgetFastBurn
+        # 14.4x burn rate over 1h (confirmed by 5m) consumes 2% of a 30d budget.
+        expr: |
+          sli:http_errors:ratio_rate1h > (14.4 * 0.001)
+          and sli:http_errors:ratio_rate5m > (14.4 * 0.001)
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "intake-api burning error budget fast ({{ $value | humanizePercentage }} errors)"
+          runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/intake-api-errors.md"
+          dashboard: "grafana/d/intake-api"
+
+      - alert: IntakeApiErrorBudgetSlowBurn
+        expr: |
+          sli:http_errors:ratio_rate6h > (6 * 0.001)
+          and sli:http_errors:ratio_rate30m > (6 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "intake-api error budget slow burn"
+          runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/intake-api-errors.md"
+
+      - alert: IntakeApiLatencyHigh
+        expr: max by (service, env) (sli:http_latency:p99_5m) > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "intake-api p99 latency {{ $value | humanizeDuration }} > 500ms"

@@ -1,0 +1,67 @@
+# promtool unit tests for alert rules: `make obs-test` (runs in CI).
+# Alerts are code; untested alert expressions are how you find out at 3am
+# that a page never fires.
+rule_files:
+  - ../rules/slo-intake-api.yml
+  - ../rules/security-phi.yml
+  - ../rules/data-platform.yml
+
+evaluation_interval: 30s
+
+tests:
+  - name: fast burn pages when 5% of requests fail
+    interval: 30s
+    input_series:
+      - series: 'http_requests_total{service="intake-api", env="prod", method="POST", route="/v1/patients", status="2xx"}'
+        values: '0+950x200'
+      - series: 'http_requests_total{service="intake-api", env="prod", method="POST", route="/v1/patients", status="5xx"}'
+        values: '0+50x200'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: IntakeApiErrorBudgetFastBurn
+        exp_alerts:
+          - exp_labels: { severity: critical, team: platform, service: intake-api, env: prod }
+            exp_annotations:
+              summary: "intake-api burning error budget fast (5% errors)"
+              runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/intake-api-errors.md"
+              dashboard: "grafana/d/intake-api"
+
+  - name: healthy traffic does not page
+    interval: 30s
+    input_series:
+      - series: 'http_requests_total{service="intake-api", env="prod", method="POST", route="/v1/patients", status="2xx"}'
+        values: '0+1000x200'
+      - series: 'http_requests_total{service="intake-api", env="prod", method="POST", route="/v1/patients", status="5xx"}'
+        values: '0+0x200'
+    alert_rule_test:
+      - eval_time: 90m
+        alertname: IntakeApiErrorBudgetFastBurn
+        exp_alerts: []
+
+  - name: a single decrypt failure pages security
+    interval: 1m
+    input_series:
+      - series: 'phi_decrypt_failures_total{service="intake-api"}'
+        values: '0 0 0 1 1 1'
+    alert_rule_test:
+      - eval_time: 5m
+        alertname: PhiDecryptFailures
+        exp_alerts:
+          - exp_labels: { severity: critical, team: security, service: intake-api }
+            exp_annotations:
+              summary: "PHI field decryption failures on intake-api"
+              runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/phi-decrypt-failure.md"
+
+  - name: failed DR drill pages
+    interval: 1h
+    input_series:
+      - series: 'dr_drill_success{cluster="meridian-prod-core"}'
+        values: '0'
+    alert_rule_test:
+      - eval_time: 0m
+        alertname: DRDrillFailed
+        exp_alerts:
+          - exp_labels: { severity: critical, team: platform, cluster: meridian-prod-core }
+            exp_annotations:
+              summary: "Weekly restore drill FAILED for meridian-prod-core: backups may not be restorable"
+              runbook_url: "https://github.com/OWNER/meridian-platform/blob/main/docs/runbooks/disaster-recovery.md"
