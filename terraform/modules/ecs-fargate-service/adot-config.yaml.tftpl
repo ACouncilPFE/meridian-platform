@@ -52,10 +52,16 @@ exporters:
       authenticator: sigv4auth
     resource_to_telemetry_conversion:
       enabled: true
+%{ if traces_endpoint != "" ~}
   otlp/traces:
     endpoint: ${traces_endpoint}
     tls:
       insecure: false
+%{ else ~}
+  # No Tempo endpoint configured (demo): send traces to AWS X-Ray instead.
+  awsxray:
+    region: ${region}
+%{ endif ~}
 
 service:
   extensions: [sigv4auth, health_check]
@@ -67,4 +73,4 @@ service:
     traces:
       receivers: [otlp]
       processors: [memory_limiter, attributes/scrub_phi, resourcedetection, batch]
-      exporters: [otlp/traces]
+      exporters: [${traces_endpoint != "" ? "otlp/traces" : "awsxray"}]

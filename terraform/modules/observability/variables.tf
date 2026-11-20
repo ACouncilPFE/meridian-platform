@@ -45,3 +45,8 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "enable_managed_grafana" {
+  type    = bool
+  default = true
+}

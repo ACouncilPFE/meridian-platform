@@ -114,8 +114,9 @@ resource "aws_rds_cluster" "this" {
   dynamic "serverlessv2_scaling_configuration" {
     for_each = var.instance_class == "db.serverless" ? [1] : []
     content {
-      min_capacity = var.serverless_min_acu
-      max_capacity = var.serverless_max_acu
+      min_capacity             = var.serverless_min_acu
+      max_capacity             = var.serverless_max_acu
+      seconds_until_auto_pause = var.serverless_min_acu == 0 ? var.seconds_until_auto_pause : null
     }
   }
 
@@ -161,6 +162,7 @@ resource "aws_rds_cluster_instance" "this" {
 
 # --- AWS Backup: long-term retention + cross-region copy ---------------------
 resource "aws_backup_vault" "primary" {
+  count       = var.enable_aws_backup ? 1 : 0
   name        = "${var.name}-primary"
   kms_key_arn = var.kms_key_arn
   tags        = local.tags
@@ -168,19 +170,20 @@ resource "aws_backup_vault" "primary" {
 
 # WORM lock: backups cannot be deleted early, even by an admin (ransomware defense).
 resource "aws_backup_vault_lock_configuration" "primary" {
-  count               = var.enable_vault_lock ? 1 : 0
-  backup_vault_name   = aws_backup_vault.primary.name
+  count               = var.enable_aws_backup && var.enable_vault_lock ? 1 : 0
+  backup_vault_name   = aws_backup_vault.primary[0].name
   min_retention_days  = 7
   max_retention_days  = var.long_term_retention_days
   changeable_for_days = 3
 }
 
 resource "aws_backup_plan" "this" {
-  name = var.name
+  count = var.enable_aws_backup ? 1 : 0
+  name  = var.name
 
   rule {
     rule_name         = "daily"
-    target_vault_name = aws_backup_vault.primary.name
+    target_vault_name = aws_backup_vault.primary[0].name
     schedule          = "cron(0 5 * * ? *)"
     start_window      = 60
     completion_window = 360
@@ -204,6 +207,7 @@ resource "aws_backup_plan" "this" {
 }
 
 resource "aws_iam_role" "backup" {
+  count       = var.enable_aws_backup ? 1 : 0
   name_prefix = "${var.name}-backup-"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -221,8 +225,9 @@ resource "aws_iam_role" "backup" {
 }
 
 resource "aws_backup_selection" "this" {
+  count        = var.enable_aws_backup ? 1 : 0
   name         = var.name
-  plan_id      = aws_backup_plan.this.id
-  iam_role_arn = aws_iam_role.backup.arn
+  plan_id      = aws_backup_plan.this[0].id
+  iam_role_arn = aws_iam_role.backup[0].arn
   resources    = [aws_rds_cluster.this.arn]
 }

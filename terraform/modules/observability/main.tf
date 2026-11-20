@@ -115,6 +115,9 @@ resource "aws_prometheus_alert_manager_definition" "this" {
 }
 
 # --- Grafana -----------------------------------------------------------------
+# Managed Grafana requires IAM Identity Center (an AWS Organization). Demo
+# accounts can set enable_managed_grafana = false and run Grafana locally
+# against this AMP workspace with SigV4 (see observability/demo/).
 data "aws_iam_policy_document" "grafana_assume" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -126,6 +129,7 @@ data "aws_iam_policy_document" "grafana_assume" {
 }
 
 resource "aws_iam_role" "grafana" {
+  count              = var.enable_managed_grafana ? 1 : 0
   name_prefix        = "${var.name}-grafana-"
   assume_role_policy = data.aws_iam_policy_document.grafana_assume.json
   managed_policy_arns = [
@@ -137,23 +141,25 @@ resource "aws_iam_role" "grafana" {
 }
 
 resource "aws_grafana_workspace" "this" {
+  count                    = var.enable_managed_grafana ? 1 : 0
   name                     = var.name
   account_access_type      = "CURRENT_ACCOUNT"
   authentication_providers = ["AWS_SSO"]
   permission_type          = "SERVICE_MANAGED"
-  role_arn                 = aws_iam_role.grafana.arn
+  role_arn                 = aws_iam_role.grafana[0].arn
   data_sources             = ["PROMETHEUS", "CLOUDWATCH", "XRAY"]
   grafana_version          = "10.4"
 
   vpc_configuration {
     subnet_ids         = var.private_subnet_ids
-    security_group_ids = [aws_security_group.grafana.id]
+    security_group_ids = [aws_security_group.grafana[0].id]
   }
 
   tags = local.tags
 }
 
 resource "aws_security_group" "grafana" {
+  count       = var.enable_managed_grafana ? 1 : 0
   name_prefix = "${var.name}-grafana-"
   vpc_id      = var.vpc_id
   description = "Managed Grafana ENIs (reach Tempo / private data sources)"
@@ -174,15 +180,15 @@ resource "aws_security_group" "grafana" {
 }
 
 resource "aws_grafana_role_association" "admins" {
-  count        = length(var.grafana_admin_group_ids) > 0 ? 1 : 0
+  count        = var.enable_managed_grafana && length(var.grafana_admin_group_ids) > 0 ? 1 : 0
   role         = "ADMIN"
   group_ids    = var.grafana_admin_group_ids
-  workspace_id = aws_grafana_workspace.this.id
+  workspace_id = aws_grafana_workspace.this[0].id
 }
 
 resource "aws_grafana_role_association" "viewers" {
-  count        = length(var.grafana_viewer_group_ids) > 0 ? 1 : 0
+  count        = var.enable_managed_grafana && length(var.grafana_viewer_group_ids) > 0 ? 1 : 0
   role         = "VIEWER"
   group_ids    = var.grafana_viewer_group_ids
-  workspace_id = aws_grafana_workspace.this.id
+  workspace_id = aws_grafana_workspace.this[0].id
 }

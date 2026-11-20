@@ -66,11 +66,20 @@ def run_checks(conn, expected_tables: list[str], expected_head: str | None) -> d
 
 
 def _emit_metrics(result: dict, cluster: str) -> None:
+    """Push gauges over OTLP to the ADOT layer's collector (localhost:4318),
+    which remote-writes them to Amazon Managed Prometheus with SigV4."""
     try:
-        from opentelemetry import metrics
-    except ImportError:  # layer not attached (local runs)
+        from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+        from opentelemetry.sdk.metrics import MeterProvider
+        from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    except ImportError:  # layer not attached (local runs / tests)
+        log.warning("OpenTelemetry not available; DR metrics not exported")
         return
-    meter = metrics.get_meter("dr_drill")
+    reader = PeriodicExportingMetricReader(
+        OTLPMetricExporter(endpoint="http://localhost:4318/v1/metrics"), export_interval_millis=60_000
+    )
+    provider = MeterProvider(metric_readers=[reader])
+    meter = provider.get_meter("dr_drill")
     attrs = {"cluster": cluster}
     for name, value in (
         ("dr_drill_success", 1 if result["passed"] else 0),
@@ -79,9 +88,8 @@ def _emit_metrics(result: dict, cluster: str) -> None:
         ("dr_drill_last_run_timestamp_seconds", int(datetime.now(UTC).timestamp())),
     ):
         meter.create_gauge(name).set(value, attrs)
-    provider = metrics.get_meter_provider()
-    if hasattr(provider, "force_flush"):
-        provider.force_flush()
+    provider.force_flush()
+    provider.shutdown()
 
 
 def _connect(endpoint: str):

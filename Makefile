@@ -40,6 +40,9 @@ obs-test: ## Validate + unit-test Prometheus rules; check dashboards are generat
 dashboards: ## Regenerate Grafana dashboard JSON from code
 	python3 observability/grafana/build_dashboards.py
 
+tf-wiring: ## Offline check of module inputs/outputs (no provider downloads)
+	python3 scripts/ci/tf_wiring_check.py
+
 tf-check: ## fmt + validate all Terraform
 	terraform fmt -check -recursive terraform
 	@for d in terraform/modules/* terraform/envs/* terraform/bootstrap/*; do \
@@ -53,8 +56,21 @@ lambda-build: ## Bundle DR verify lambda with vendored deps (arm64)
 	pip install -q -r lambdas/dr_verify/requirements.txt -t lambdas/dr_verify/build \
 	  --platform manylinux2014_aarch64 --only-binary=:all: --python-version 3.12
 
+# --- Demo environment (real AWS, low cost) ------------------------------------
+demo-up: ## Deploy the low-cost demo stack to AWS (~20 min, ~$0.10-0.30/hr)
+	scripts/demo/up.sh $(if $(BUDGET_EMAIL),--budget-email $(BUDGET_EMAIL),)
+
+demo-grafana: ## Local Grafana against the demo's Managed Prometheus
+	scripts/demo/grafana.sh
+
+demo-drill: ## Run the Aurora restore drill now and print RTO/RPO
+	scripts/demo/drill.sh
+
+demo-down: ## Destroy the demo stack
+	scripts/demo/down.sh
+
 # --- Operations --------------------------------------------------------------
 rollback: ## Roll an ECS service back to its previous task definition: make rollback ENV=prod SERVICE=intake-api
 	scripts/ops/rollback.sh $(ENV) $(SERVICE)
 
-.PHONY: help up down seed logs test test-api test-worker test-lambda obs-test dashboards tf-check lambda-build rollback
+.PHONY: help up down seed logs test test-api test-worker test-lambda obs-test dashboards tf-check lambda-build tf-wiring rollback demo-up demo-grafana demo-drill demo-down

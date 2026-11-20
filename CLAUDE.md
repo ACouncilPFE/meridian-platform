@@ -14,7 +14,7 @@ This repo is developed AI-natively: Claude Code drafts, refactors, reviews, and 
 | All tests + rule tests + dashboard drift | `make test` |
 | API tests only | `cd services/intake-api && pytest -q` |
 | Lint / format / types | `ruff check . && ruff format --check . && mypy src` |
-| Terraform | `make tf-check` (fmt + validate). **Never** run `apply` or `destroy`. |
+| Terraform | `make tf-wiring` (offline) and `make tf-check` (fmt + validate). **Never** run `apply` or `destroy`; the demo is deployed by a human via `make demo-up`. |
 | Alert rules | `make obs-test` |
 | Regenerate dashboards | `make dashboards` (edit `build_dashboards.py`, never the JSON) |
 

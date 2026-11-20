@@ -15,6 +15,8 @@ FROM python:3.12-slim AS runtime
 # ECS task definition `user = "10001"`; root FS is mounted read-only).
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
  && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+# Amazon RDS CA bundle so the app can use sslmode=verify-full against Aurora.
+ADD --chmod=644 https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /etc/ssl/certs/rds-global-bundle.pem
 COPY --from=build /opt/venv /opt/venv
 COPY alembic.ini /app/alembic.ini
 COPY migrations /app/migrations

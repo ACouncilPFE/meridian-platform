@@ -220,6 +220,19 @@ module "pipeline_worker" {
   tags                 = local.tags
 }
 
+# Separate one-off task: the only holder of the Aurora master credential.
+module "db_admin" {
+  source                    = "../../modules/db-admin-task"
+  name                      = "intake-api"
+  environment               = "prod"
+  image                     = var.intake_api_image
+  db_host                   = module.aurora.writer_endpoint
+  master_secret_arn         = module.aurora.master_user_secret_arn
+  master_secret_kms_key_arn = module.kms.key_arns["phi"]
+  logs_kms_key_arn          = module.kms.key_arns["ops"]
+  tags                      = local.tags
+}
+
 # --- De-identified export bucket (Snowflake stage) ---------------------------
 resource "aws_s3_bucket" "exports" {
   bucket = "${local.name}-deidentified-exports-${data.aws_caller_identity.current.account_id}"
@@ -272,16 +285,26 @@ module "dr_drill" {
   source                    = "../../modules/dr-restore-drill"
   source_cluster_id         = module.aurora.cluster_id
   database_name             = "app"
-  db_subnet_group_name      = module.aurora.cluster_id
+  db_subnet_group_name      = module.aurora.db_subnet_group_name
   drill_security_group_id   = module.aurora.security_group_id
   vpc_id                    = module.network.vpc_id
   vpc_cidr                  = module.network.vpc_cidr
-  data_subnet_ids           = module.network.data_subnet_ids
+  lambda_subnet_ids         = module.network.private_subnet_ids
   kms_key_arn               = module.kms.key_arns["phi"]
   lambda_source_dir         = "${path.root}/../../../lambdas/dr_verify/build"
+  logs_kms_key_arn          = module.kms.key_arns["ops"]
   amp_workspace_arn         = module.observability.amp_workspace_arn
   amp_remote_write_endpoint = module.observability.amp_remote_write_endpoint
   tags                      = local.tags
+}
+
+resource "aws_vpc_security_group_ingress_rule" "dr_verify_to_aurora" {
+  security_group_id            = module.aurora.security_group_id
+  referenced_security_group_id = module.dr_drill.verify_lambda_security_group_id
+  from_port                    = 5432
+  to_port                      = 5432
+  ip_protocol                  = "tcp"
+  description                  = "DR verify lambda -> restored drill cluster"
 }
 
 # --- Analytics ---------------------------------------------------------------

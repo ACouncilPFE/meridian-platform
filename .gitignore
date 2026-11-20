@@ -26,3 +26,8 @@ lambdas/dr_verify/build/
 .env.*
 *.pem
 *.key
+
+# Demo env uses local state
+terraform/envs/demo/terraform.tfstate*
+terraform/envs/demo/.terraform.lock.hcl
+.demo.env

@@ -5,6 +5,7 @@ How the platform implements technical safeguards, with pointers to the code that
 | Requirement | HIPAA ref | SOC 2 | Implementation | Evidence |
 |---|---|---|---|---|
 | Unique user identification | 164.312(a)(2)(i) | CC6.1 | IAM Identity Center for humans; per-service IAM roles; IAM DB auth (no shared DB passwords) | `modules/aurora-postgres` (`iam_database_authentication_enabled`), `envs/prod` task policies |
+| Separation of duties (DB) | 164.308(a)(3) | CC6.3 | Master credential readable only by a one-off `db-admin` task's execution role; runtime roles have no DDL/DELETE; audit log append-only for the app role | `modules/db-admin-task`, `intake_api/admin.py`, `test_admin.py` |
 | Emergency access | 164.312(a)(2)(ii) | CC6.1 | Break-glass role (MFA, alerting on use) outside this repo; account root retains KMS admin to prevent lockout | `modules/kms` `AccountAdmin` statement |
 | Automatic logoff / session limits | 164.312(a)(2)(iii) | CC6.1 | 1h max STS sessions for CI; 15-min IAM DB tokens | `bootstrap/github-oidc`, `db.py` |
 | Encryption at rest | 164.312(a)(2)(iv) | CC6.1, C1.1 | CMKs per data classification, annual rotation; Aurora, DynamoDB, S3, logs, backups, AMP all CMK-encrypted; **field-level envelope encryption** for direct identifiers | `modules/kms`, `crypto.py`, ADR-0001 |

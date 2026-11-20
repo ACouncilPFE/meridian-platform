@@ -48,7 +48,9 @@ variable "alb_ingress_cidrs" {
 }
 
 variable "certificate_arn" {
-  type = string
+  description = "ACM certificate for the HTTPS listener. Null = plain HTTP (only allowed outside prod, for demos)."
+  type        = string
+  default     = null
 }
 
 variable "alb_access_logs_bucket" {
@@ -133,8 +135,9 @@ variable "amp_remote_write_endpoint" {
 }
 
 variable "traces_otlp_endpoint" {
-  description = "OTLP gRPC endpoint of the shared trace backend (Grafana Tempo)."
+  description = "OTLP gRPC endpoint of the shared trace backend (Grafana Tempo). Empty = AWS X-Ray."
   type        = string
+  default     = ""
 }
 
 variable "adot_image" {

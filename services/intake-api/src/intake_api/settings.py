@@ -42,5 +42,8 @@ class Settings:
             return "sqlite+pysqlite:///./local.db"
         if self.db_iam_auth:
             # Password is a 15-minute IAM token injected per-connection (see db.py).
-            return f"postgresql+psycopg://{self.db_user}@{self.db_host}:5432/{self.db_name}?sslmode=verify-full"
+            return (
+                f"postgresql+psycopg://{self.db_user}@{self.db_host}:5432/{self.db_name}"
+                "?sslmode=verify-full&sslrootcert=/etc/ssl/certs/rds-global-bundle.pem"
+            )
         return f"postgresql+psycopg://{self.db_user}@{self.db_host}:5432/{self.db_name}"

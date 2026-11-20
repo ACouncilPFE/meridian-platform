@@ -22,8 +22,9 @@ variable "vpc_cidr" {
   type = string
 }
 
-variable "data_subnet_ids" {
-  type = list(string)
+variable "lambda_subnet_ids" {
+  description = "Private app-tier subnets (with NAT egress) for the verify Lambda."
+  type        = list(string)
 }
 
 variable "kms_key_arn" {
@@ -63,13 +64,23 @@ variable "tags" {
 }
 
 variable "adot_python_layer_arn" {
-  description = "AWS Distro for OpenTelemetry Python Lambda layer ARN for the region."
+  description = "ADOT Python Lambda layer ARN. Null = the module's pinned default for the current region (check aws-otel.github.io for newer versions)."
   type        = string
-  default     = "arn:aws:lambda:us-east-1:901920570463:layer:aws-otel-python-arm64-ver-1-25-0:1"
+  default     = null
 }
 
 variable "expected_alembic_head" {
   description = "Alembic revision the restored DB must be at (set by CD from the deployed release)."
   type        = string
   default     = "0002"
+}
+
+variable "logs_kms_key_arn" {
+  description = "Ops/logging CMK for the state machine log group (its key policy admits CloudWatch Logs)."
+  type        = string
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 365
 }

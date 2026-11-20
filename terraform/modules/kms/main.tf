@@ -39,21 +39,41 @@ data "aws_iam_policy_document" "key" {
     }
   }
 
-  # AWS services (RDS, Logs, DynamoDB...) acting on our behalf, scoped to this account.
+  # AWS services (RDS, DynamoDB, SNS...) acting on our behalf, scoped to this account.
   dynamic "statement" {
-    for_each = length(each.value.service_principals) > 0 ? [1] : []
+    for_each = length([for p in each.value.service_principals : p if !startswith(p, "logs.")]) > 0 ? [1] : []
     content {
       sid       = "AllowServices"
       actions   = ["kms:Encrypt", "kms:Decrypt", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:DescribeKey", "kms:CreateGrant"]
       resources = ["*"]
       principals {
         type        = "Service"
-        identifiers = each.value.service_principals
+        identifiers = [for p in each.value.service_principals : p if !startswith(p, "logs.")]
       }
       condition {
         test     = "StringEquals"
         variable = "aws:SourceAccount"
         values   = [data.aws_caller_identity.current.account_id]
+      }
+    }
+  }
+
+  # CloudWatch Logs is scoped by the log-group ARN in the encryption context
+  # (the documented pattern for KMS-encrypted log groups).
+  dynamic "statement" {
+    for_each = [for p in each.value.service_principals : p if startswith(p, "logs.")]
+    content {
+      sid       = "AllowCloudWatchLogs${replace(statement.value, "/[^A-Za-z0-9]/", "")}"
+      actions   = ["kms:Encrypt*", "kms:Decrypt*", "kms:ReEncrypt*", "kms:GenerateDataKey*", "kms:Describe*"]
+      resources = ["*"]
+      principals {
+        type        = "Service"
+        identifiers = [statement.value]
+      }
+      condition {
+        test     = "ArnLike"
+        variable = "kms:EncryptionContext:aws:logs:arn"
+        values   = ["arn:${data.aws_partition.current.partition}:logs:*:${data.aws_caller_identity.current.account_id}:*"]
       }
     }
   }

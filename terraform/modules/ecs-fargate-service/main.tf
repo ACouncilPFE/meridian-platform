@@ -19,6 +19,9 @@ locals {
     "data:classification" = var.data_classification
   })
 
+  tls           = var.certificate_arn != null
+  listener_port = local.tls ? 443 : 80
+
   adot_config = templatefile("${path.module}/adot-config.yaml.tftpl", {
     service_name    = var.name
     environment     = var.environment
@@ -114,9 +117,9 @@ resource "aws_security_group" "alb" {
   tags        = local.tags
 
   ingress {
-    description = "HTTPS"
-    from_port   = 443
-    to_port     = 443
+    description = local.tls ? "HTTPS" : "HTTP (demo only: no certificate, synthetic data)"
+    from_port   = local.listener_port
+    to_port     = local.listener_port
     protocol    = "tcp"
     cidr_blocks = var.alb_ingress_cidrs
   }
@@ -188,6 +191,13 @@ resource "aws_lb" "this" {
   }
 
   tags = local.tags
+
+  lifecycle {
+    precondition {
+      condition     = !(var.environment == "prod" && var.certificate_arn == null)
+      error_message = "prod services must terminate TLS: set certificate_arn."
+    }
+  }
 }
 
 resource "aws_lb_target_group" "this" {
@@ -214,11 +224,26 @@ resource "aws_lb_target_group" "this" {
 }
 
 resource "aws_lb_listener" "https" {
+  count             = local.tls ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
   certificate_arn   = var.certificate_arn
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.this.arn
+  }
+}
+
+# Plain-HTTP listener exists only when no certificate is supplied (demo envs).
+# A precondition on aws_lb fails the plan if prod omits certificate_arn.
+resource "aws_lb_listener" "http" {
+  count             = local.tls ? 0 : 1
+  load_balancer_arn = aws_lb.this.arn
+  port              = 80
+  protocol          = "HTTP"
 
   default_action {
     type             = "forward"
@@ -250,6 +275,7 @@ resource "aws_ecs_task_definition" "this" {
       user                   = "10001"
       portMappings           = [{ containerPort = var.container_port, protocol = "tcp" }]
       environment = [for k, v in merge(var.environment_variables, {
+        AWS_REGION                  = data.aws_region.current.name
         SERVICE_NAME                = var.name
         DEPLOY_ENV                  = var.environment
         OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"

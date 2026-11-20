@@ -17,6 +17,10 @@ data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
 
 locals {
+  adot_layer_arn = coalesce(
+    var.adot_python_layer_arn,
+    "arn:aws:lambda:${data.aws_region.current.name}:901920570463:layer:aws-otel-python-arm64-ver-1-32-0:2",
+  )
   tags          = merge(var.tags, { "platform:module" = "dr-restore-drill" })
   drill_cluster = "${var.source_cluster_id}-drill"
 }
@@ -38,8 +42,11 @@ resource "aws_iam_role" "lambda" {
       Principal = { Service = "lambda.amazonaws.com" }
     }]
   })
-  managed_policy_arns = ["arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"]
-  tags                = local.tags
+  managed_policy_arns = [
+    "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+    "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess", # required by tracing_config Active
+  ]
+  tags = local.tags
 }
 
 resource "aws_iam_role_policy" "lambda" {
@@ -96,10 +103,12 @@ resource "aws_lambda_function" "verify" {
   timeout          = 300
   memory_size      = 512
   kms_key_arn      = var.kms_key_arn
-  layers           = [var.adot_python_layer_arn] # ADOT: OTel SDK + collector extension
+  layers           = [local.adot_layer_arn] # ADOT: OTel SDK + collector extension
 
+  # Private (app-tier) subnets: the function needs egress to AMP for metrics
+  # and reaches the restored cluster through an explicit SG rule (see outputs).
   vpc_config {
-    subnet_ids         = var.data_subnet_ids
+    subnet_ids         = var.lambda_subnet_ids
     security_group_ids = [aws_security_group.lambda.id]
   }
 
@@ -163,6 +172,12 @@ resource "aws_iam_role_policy" "sfn" {
         Resource = aws_lambda_function.verify.arn
       },
       {
+        # Required because tracing_configuration is enabled on the state machine.
+        Effect   = "Allow"
+        Action   = ["xray:PutTraceSegments", "xray:PutTelemetryRecords", "xray:GetSamplingRules", "xray:GetSamplingTargets"]
+        Resource = "*"
+      },
+      {
         Effect   = "Allow"
         Action   = ["logs:CreateLogDelivery", "logs:GetLogDelivery", "logs:UpdateLogDelivery", "logs:DeleteLogDelivery", "logs:ListLogDeliveries", "logs:PutResourcePolicy", "logs:DescribeResourcePolicies", "logs:DescribeLogGroups"]
         Resource = "*"
@@ -173,8 +188,8 @@ resource "aws_iam_role_policy" "sfn" {
 
 resource "aws_cloudwatch_log_group" "sfn" {
   name              = "/aws/states/${var.source_cluster_id}-dr-drill"
-  retention_in_days = 365
-  kms_key_id        = var.kms_key_arn
+  retention_in_days = var.log_retention_days
+  kms_key_id        = var.logs_kms_key_arn
   tags              = local.tags
 }
 

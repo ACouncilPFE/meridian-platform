@@ -11,11 +11,11 @@ output "amp_remote_write_endpoint" {
 }
 
 output "grafana_endpoint" {
-  value = aws_grafana_workspace.this.endpoint
+  value = one(aws_grafana_workspace.this[*].endpoint)
 }
 
 output "grafana_workspace_id" {
-  value = aws_grafana_workspace.this.id
+  value = one(aws_grafana_workspace.this[*].id)
 }
 
 output "alert_topic_arns" {

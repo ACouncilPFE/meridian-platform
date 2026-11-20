@@ -64,8 +64,7 @@
       "Resource": "arn:aws:states:::aws-sdk:rds:describeDBInstances",
       "Parameters": { "DbInstanceIdentifier": "${drill_cluster_id}-0" },
       "ResultSelector": {
-        "status.$": "$.DbInstances[0].DbInstanceStatus",
-        "endpoint.$": "$.DbInstances[0].Endpoint.Address"
+        "status.$": "$.DbInstances[0].DbInstanceStatus"
       },
       "ResultPath": "$.instance",
       "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
@@ -74,9 +73,22 @@
     "InstanceReady?": {
       "Type": "Choice",
       "Choices": [
-        { "Variable": "$.instance.status", "StringEquals": "available", "Next": "Verify" }
+        { "Variable": "$.instance.status", "StringEquals": "available", "Next": "GetEndpoint" }
       ],
       "Default": "WaitForInstance"
+    },
+    "GetEndpoint": {
+      "Comment": "Endpoint is only present once the instance is available.",
+      "Type": "Task",
+      "Resource": "arn:aws:states:::aws-sdk:rds:describeDBInstances",
+      "Parameters": { "DbInstanceIdentifier": "${drill_cluster_id}-0" },
+      "ResultSelector": {
+        "status.$": "$.DbInstances[0].DbInstanceStatus",
+        "endpoint.$": "$.DbInstances[0].Endpoint.Address"
+      },
+      "ResultPath": "$.instance",
+      "Catch": [{ "ErrorEquals": ["States.ALL"], "ResultPath": "$.error", "Next": "Cleanup" }],
+      "Next": "Verify"
     },
     "Verify": {
       "Type": "Task",

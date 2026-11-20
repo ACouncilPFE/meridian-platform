@@ -87,6 +87,7 @@ module "intake_api" {
   environment_variables = {
     DB_HOST           = module.aurora.writer_endpoint
     DB_NAME           = "app"
+    DB_USER           = "intake_api"
     DB_IAM_AUTH       = "true"
     IDEMPOTENCY_TABLE = module.idempotency_table.table_name
     SEED_SYNTHETIC    = "true"
@@ -94,6 +95,19 @@ module "intake_api" {
   tags = local.tags
 }
 
+module "db_admin" {
+  source                    = "../../modules/db-admin-task"
+  name                      = "${local.name}-intake"
+  environment               = "ephemeral"
+  image                     = var.image
+  db_host                   = module.aurora.writer_endpoint
+  master_secret_arn         = module.aurora.master_user_secret_arn
+  master_secret_kms_key_arn = local.dev.kms_key_arns["phi"]
+  logs_kms_key_arn          = local.dev.kms_key_arns["ops"]
+  log_retention_days        = 7
+  tags                      = local.tags
+}
+
 output "url" {
-  value = "https://${module.intake_api.alb_dns_name}"
+  value = module.intake_api.url
 }

@@ -28,5 +28,9 @@ output "master_user_secret_arn" {
 }
 
 output "backup_vault_name" {
-  value = aws_backup_vault.primary.name
+  value = one(aws_backup_vault.primary[*].name)
+}
+
+output "db_subnet_group_name" {
+  value = aws_db_subnet_group.this.name
 }

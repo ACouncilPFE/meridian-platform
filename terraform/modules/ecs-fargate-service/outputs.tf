@@ -21,3 +21,7 @@ output "alb_dns_name" {
 output "alb_arn_suffix" {
   value = aws_lb.this.arn_suffix
 }
+
+output "url" {
+  value = "${local.tls ? "https" : "http"}://${aws_lb.this.dns_name}"
+}

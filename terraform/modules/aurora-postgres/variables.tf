@@ -100,3 +100,15 @@ variable "tags" {
   type    = map(string)
   default = {}
 }
+
+variable "enable_aws_backup" {
+  description = "Daily AWS Backup plan with long-term retention (and optional cross-region copy). PITR is always on regardless."
+  type        = bool
+  default     = true
+}
+
+variable "seconds_until_auto_pause" {
+  description = "With serverless_min_acu = 0, pause compute after this much idle time."
+  type        = number
+  default     = 300
+}

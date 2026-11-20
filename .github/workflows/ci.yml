@@ -102,6 +102,8 @@ jobs:
       - uses: hashicorp/setup-terraform@v3
         with: { terraform_version: 1.9.8 }
       - run: terraform fmt -check -recursive terraform
+      - name: Module wiring (inputs/outputs) check
+        run: pip install python-hcl2 && python3 scripts/ci/tf_wiring_check.py
       - name: Validate every module and environment
         run: |
           for d in terraform/modules/* terraform/envs/* terraform/bootstrap/*; do
