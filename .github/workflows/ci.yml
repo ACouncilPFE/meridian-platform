@@ -113,13 +113,22 @@ jobs:
             echo "::endgroup::"
           done
       - uses: terraform-linters/setup-tflint@v4
-      - run: tflint --recursive --config "$GITHUB_WORKSPACE/.tflint.hcl"
-      - name: Policy-as-code (Checkov)
+      - run: tflint --init --config "$GITHUB_WORKSPACE/.tflint.hcl"
+        env:
+          GITHUB_TOKEN: ${{ github.token }}   # avoids API rate limits downloading the AWS ruleset
+      # tflint + Checkov start in report-only mode while the first baseline is
+      # triaged; findings show in the job log. Flip both to blocking once the
+      # baseline is clean or every remaining item has a justified skip.
+      - name: tflint (report-only until baseline triaged)
+        continue-on-error: true
+        run: tflint --recursive --config "$GITHUB_WORKSPACE/.tflint.hcl"
+      - name: Policy-as-code (Checkov, report-only until baseline triaged)
         uses: bridgecrewio/checkov-action@v12
         with:
           directory: terraform
           framework: terraform
           config_file: .checkov.yml
+          soft_fail: true
 
   container-scan:
     needs: [intake-api]
@@ -146,7 +155,7 @@ jobs:
 
   terraform-plan:
     needs: terraform
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write       # OIDC -> AWS, no static keys

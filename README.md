@@ -138,4 +138,6 @@ Unchanged in the demo: KMS key separation, field-level PHI encryption, IAM datab
 
 This is a portfolio project. `envs/prod` is a complete design that hasn't been applied. `envs/demo` is the deployable subset ([guide](docs/demo.md)). `envs/dev` isn't included: it has the same composition as `prod` with dev-sized inputs, plus outputs that the ephemeral stacks read through remote state. Account IDs, ARNs, and `OWNER` placeholders need replacing before anything in `prod` is applied.
 
+The AWS-facing workflows (`deploy`, `ephemeral-env`, `dr-drill`, and the PR Terraform plan) stay dormant until the repository variable `AWS_DEPLOY_ENABLED=true` is set alongside the OIDC role ARNs, so CI stays green on a copy with no AWS account attached.
+
 Verification: `make test` runs the Python suites, promtool rule tests, and the dashboard drift check. `make tf-wiring` checks every module call's inputs and outputs offline, and CI additionally runs `terraform validate`, tflint, and Checkov. The Temporal workflow test uses Temporal's time-skipping test server, which CI downloads automatically.

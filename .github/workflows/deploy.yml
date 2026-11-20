@@ -1,4 +1,7 @@
 # Production delivery: build once, sign, deploy the same digest everywhere.
+# Dormant until the repo variable AWS_DEPLOY_ENABLED=true is set (Settings >
+# Secrets and variables > Actions > Variables), so forks and portfolio
+# copies without an AWS account don't fail on every push.
 # Gated by the `production` GitHub environment (required reviewers), which is
 # also the only OIDC subject the apply role trusts.
 name: deploy
@@ -17,6 +20,7 @@ concurrency:
 
 jobs:
   build:
+    if: vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     permissions:
       id-token: write

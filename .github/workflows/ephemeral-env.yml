@@ -1,6 +1,6 @@
 # Preview environment per pull request: full stack (Aurora + API) with
 # synthetic data. Created on open/sync, destroyed on close. Reaper below
-# catches anything that leaks.
+# catches anything that leaks. Dormant until AWS_DEPLOY_ENABLED=true.
 name: ephemeral-env
 
 on:
@@ -24,7 +24,7 @@ env:
 
 jobs:
   deploy:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'preview')
+    if: vars.AWS_DEPLOY_ENABLED == 'true' && github.event_name == 'pull_request' && github.event.action != 'closed' && contains(github.event.pull_request.labels.*.name, 'preview')
     runs-on: ubuntu-latest
     environment:
       name: pr-${{ github.event.pull_request.number }}
@@ -72,7 +72,7 @@ jobs:
             Metrics/traces: Grafana → `env="ephemeral", service="pr-${{ github.event.pull_request.number }}-intake"`
 
   destroy:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    if: vars.AWS_DEPLOY_ENABLED == 'true' && github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -93,7 +93,7 @@ jobs:
           fi
 
   reaper:
-    if: github.event_name == 'schedule'
+    if: vars.AWS_DEPLOY_ENABLED == 'true' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

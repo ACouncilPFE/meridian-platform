@@ -11,6 +11,7 @@ permissions:
 
 jobs:
   drill:
+    if: vars.AWS_DEPLOY_ENABLED == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
