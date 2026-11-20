@@ -12,6 +12,9 @@ locals {
 }
 
 data "aws_iam_policy_document" "key" {
+  #checkov:skip=CKV_AWS_109:KMS key policies must use Resource "*" (it means "this key"); the AccountAdmin statement is AWS's required default to prevent unmanageable keys.
+  #checkov:skip=CKV_AWS_111:Same: key-policy Resource "*" refers only to the key the policy is attached to.
+  #checkov:skip=CKV_AWS_356:Same: key-policy Resource "*" refers only to the key the policy is attached to.
   for_each = var.keys
 
   # Account root retains administrative control (prevents unrecoverable keys).

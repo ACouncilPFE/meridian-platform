@@ -84,6 +84,7 @@ resource "aws_rds_cluster_parameter_group" "this" {
 }
 
 resource "aws_rds_cluster" "this" {
+  #checkov:skip=CKV2_AWS_27:Statement-level query logging (log_statement) would write PHI literals to CloudWatch. pgaudit logs DDL/role/write events with parameter logging disabled, plus slow-query logging.
   cluster_identifier = var.name
   engine             = "aurora-postgresql"
   engine_version     = var.engine_version

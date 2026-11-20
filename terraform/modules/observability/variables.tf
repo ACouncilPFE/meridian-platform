@@ -6,6 +6,11 @@ variable "kms_key_arn" {
   type = string
 }
 
+variable "log_retention_days" {
+  type    = number
+  default = 365
+}
+
 variable "rules_dir" {
   description = "Directory containing Prometheus rule files (*.yml)."
   type        = string

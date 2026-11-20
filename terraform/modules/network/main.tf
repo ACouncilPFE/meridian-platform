@@ -7,12 +7,19 @@
 # -----------------------------------------------------------------------------
 
 locals {
-  azs  = slice(data.aws_availability_zones.available.names, 0, var.az_count)
+  # Pin AZs explicitly when given; otherwise take the first N standard zones.
+  # Never filter on state = "available": an AZ becoming impaired would shift
+  # the list and Terraform would try to replace subnets (and the databases in them).
+  azs  = length(var.availability_zones) > 0 ? var.availability_zones : slice(sort(data.aws_availability_zones.standard.names), 0, var.az_count)
   tags = merge(var.tags, { "platform:module" = "network" })
 }
 
-data "aws_availability_zones" "available" {
-  state = "available"
+data "aws_availability_zones" "standard" {
+  #checkov:skip=CKV_AWS_394:Result is sorted and sliced, excludes Local/Wavelength zones, and callers can pin explicit names via var.availability_zones (recommended for prod).
+  filter {
+    name   = "opt-in-status"
+    values = ["opt-in-not-required"]
+  }
 }
 
 resource "aws_vpc" "this" {
@@ -151,6 +158,7 @@ resource "aws_vpc_endpoint" "interface" {
 
 # --- Flow logs ---------------------------------------------------------------
 resource "aws_cloudwatch_log_group" "flow_logs" {
+  #checkov:skip=CKV_AWS_338:Retention is a variable defaulting to 365 days; only throwaway envs set less.
   name              = "/vpc/${var.name}/flow-logs"
   retention_in_days = var.flow_log_retention_days
   kms_key_id        = var.kms_key_arn

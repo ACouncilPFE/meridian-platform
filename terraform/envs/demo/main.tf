@@ -68,6 +68,7 @@ module "observability" {
   vpc_cidr               = module.network.vpc_cidr
   private_subnet_ids     = module.network.private_subnet_ids
   enable_managed_grafana = var.enable_managed_grafana
+  log_retention_days     = 7
   tags                   = local.tags
 }
 
@@ -131,17 +132,18 @@ resource "aws_ecs_cluster" "this" {
 module "intake_api" {
   source = "../../modules/ecs-fargate-service"
 
-  name               = "intake-api"
-  environment        = "demo"
-  image              = var.image
-  cluster_arn        = aws_ecs_cluster.this.arn
-  vpc_id             = module.network.vpc_id
-  vpc_cidr           = module.network.vpc_cidr
-  private_subnet_ids = module.network.private_subnet_ids
-  public_subnet_ids  = module.network.public_subnet_ids
-  internal           = false
-  alb_ingress_cidrs  = [var.allowed_cidr]
-  certificate_arn    = null # plain HTTP, deployer's IP only, synthetic data
+  name                    = "intake-api"
+  environment             = "demo"
+  image                   = var.image
+  cluster_arn             = aws_ecs_cluster.this.arn
+  vpc_id                  = module.network.vpc_id
+  vpc_cidr                = module.network.vpc_cidr
+  private_subnet_ids      = module.network.private_subnet_ids
+  public_subnet_ids       = module.network.public_subnet_ids
+  internal                = false
+  alb_ingress_cidrs       = [var.allowed_cidr]
+  certificate_arn         = null # plain HTTP, deployer's IP only, synthetic data
+  alb_deletion_protection = false
 
   amp_workspace_arn         = module.observability.amp_workspace_arn
   amp_remote_write_endpoint = module.observability.amp_remote_write_endpoint

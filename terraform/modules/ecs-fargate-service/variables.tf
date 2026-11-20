@@ -36,6 +36,12 @@ variable "public_subnet_ids" {
   default = []
 }
 
+variable "alb_deletion_protection" {
+  description = "Keep on everywhere except throwaway envs (demo, PR previews)."
+  type        = bool
+  default     = true
+}
+
 variable "internal" {
   description = "Internal ALB (default). Public only for edge-facing APIs."
   type        = bool

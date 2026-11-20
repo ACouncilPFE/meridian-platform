@@ -173,13 +173,14 @@ resource "aws_security_group" "service" {
 }
 
 resource "aws_lb" "this" {
+  #checkov:skip=CKV2_AWS_20:With a certificate there is no port-80 listener at all (nothing to redirect); without one (demo only) HTTP is the only listener. A precondition forbids the latter in prod.
   name                       = substr("${var.environment}-${var.name}", 0, 32)
   internal                   = var.internal
   load_balancer_type         = "application"
   security_groups            = [aws_security_group.alb.id]
   subnets                    = var.internal ? var.private_subnet_ids : var.public_subnet_ids
   drop_invalid_header_fields = true
-  enable_deletion_protection = var.environment == "prod"
+  enable_deletion_protection = var.alb_deletion_protection
 
   dynamic "access_logs" {
     for_each = var.alb_access_logs_bucket == null ? [] : [1]
@@ -201,6 +202,7 @@ resource "aws_lb" "this" {
 }
 
 resource "aws_lb_target_group" "this" {
+  #checkov:skip=CKV_AWS_378:TLS terminates at the ALB; ALB-to-task traffic stays inside private subnets and is locked to the ALB security group.
   name_prefix          = substr(replace(var.name, "-", ""), 0, 6)
   port                 = var.container_port
   protocol             = "HTTP"
@@ -240,6 +242,8 @@ resource "aws_lb_listener" "https" {
 # Plain-HTTP listener exists only when no certificate is supplied (demo envs).
 # A precondition on aws_lb fails the plan if prod omits certificate_arn.
 resource "aws_lb_listener" "http" {
+  #checkov:skip=CKV_AWS_2:Created only when certificate_arn is null (demo, synthetic data, single-IP allow-list). Precondition on aws_lb forbids this in prod.
+  #checkov:skip=CKV_AWS_103:Same as above: HTTP listener exists only in demo.
   count             = local.tls ? 0 : 1
   load_balancer_arn = aws_lb.this.arn
   port              = 80

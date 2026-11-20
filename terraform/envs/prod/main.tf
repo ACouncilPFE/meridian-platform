@@ -235,6 +235,9 @@ module "db_admin" {
 
 # --- De-identified export bucket (Snowflake stage) ---------------------------
 resource "aws_s3_bucket" "exports" {
+  #checkov:skip=CKV_AWS_18:Object-level access is captured by organization CloudTrail S3 data events, which (unlike server access logs) are tamper-evident.
+  #checkov:skip=CKV_AWS_144:Staging area only: every object is reproducible from Aurora by re-running the export workflow, and it expires in 30 days.
+  #checkov:skip=CKV2_AWS_62:Snowflake loads via COPY INTO from the workflow; no event-driven consumers exist.
   bucket = "${local.name}-deidentified-exports-${data.aws_caller_identity.current.account_id}"
   tags   = merge(local.tags, { "data:classification" = "confidential" })
 }
@@ -255,6 +258,35 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "exports" {
       kms_master_key_id = module.kms.key_arns["phi"]
     }
     bucket_key_enabled = true
+  }
+}
+
+# Data minimization: de-identified exports only need to live until Snowflake
+# has loaded them.
+resource "aws_s3_bucket_lifecycle_configuration" "exports" {
+  bucket = aws_s3_bucket.exports.id
+
+  rule {
+    id     = "expire-staged-exports"
+    status = "Enabled"
+    filter {
+      prefix = "deidentified/"
+    }
+    expiration {
+      days = 30
+    }
+    noncurrent_version_expiration {
+      noncurrent_days = 7
+    }
+  }
+
+  rule {
+    id     = "abort-incomplete-uploads"
+    status = "Enabled"
+    filter {}
+    abort_incomplete_multipart_upload {
+      days_after_initiation = 1
+    }
   }
 }
 

@@ -14,7 +14,7 @@ locals {
 
 resource "aws_cloudwatch_log_group" "amp" {
   name              = "/aws/prometheus/${var.name}"
-  retention_in_days = 90
+  retention_in_days = var.log_retention_days
   kms_key_id        = var.kms_key_arn
   tags              = local.tags
 }
@@ -165,12 +165,14 @@ resource "aws_security_group" "grafana" {
   description = "Managed Grafana ENIs (reach Tempo / private data sources)"
 
   egress {
+    description = "HTTPS to AMP, CloudWatch and X-Ray APIs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
   egress {
+    description = "Grafana Tempo query port inside the VPC"
     from_port   = 3200
     to_port     = 3200
     protocol    = "tcp"

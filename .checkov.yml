@@ -6,7 +6,10 @@ quiet: true
 skip-check:
   # ALB in ecs-fargate-service is internal by default; WAF is attached at the edge (CloudFront) for public APIs.
   - CKV2_AWS_28
-# Ephemeral PR envs deliberately disable deletion protection and long retention
+# Ephemeral PR envs and the demo deliberately trade durability for cost
 # (synthetic data only); the modules they call are still scanned via envs/prod.
+# Resource-specific exceptions live inline as `#checkov:skip=ID:reason`
+# next to the code they justify, so reviewers see them in context.
 skip-path:
   - terraform/envs/ephemeral
+  - terraform/envs/demo

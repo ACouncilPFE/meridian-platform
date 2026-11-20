@@ -30,6 +30,12 @@ variable "az_count" {
   }
 }
 
+variable "availability_zones" {
+  description = "Explicit AZ names to pin (length must equal az_count). Empty = first az_count standard zones, sorted."
+  type        = list(string)
+  default     = []
+}
+
 variable "single_nat_gateway" {
   description = "Cost saver for ephemeral/dev envs. Never true in prod (AZ failure would cut egress)."
   type        = bool

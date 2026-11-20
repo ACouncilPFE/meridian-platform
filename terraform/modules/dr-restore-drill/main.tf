@@ -61,11 +61,6 @@ resource "aws_iam_role_policy" "lambda" {
       },
       {
         Effect   = "Allow"
-        Action   = ["rds:DescribeDBClusters"]
-        Resource = "*"
-      },
-      {
-        Effect   = "Allow"
         Action   = ["aps:RemoteWrite"]
         Resource = var.amp_workspace_arn
       }
@@ -78,12 +73,14 @@ resource "aws_security_group" "lambda" {
   vpc_id      = var.vpc_id
   description = "DR verify lambda"
   egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "Postgres to the restored drill cluster"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
     cidr_blocks = [var.vpc_cidr]
   }
   egress {
+    description = "HTTPS to AWS APIs and Managed Prometheus"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -93,17 +90,20 @@ resource "aws_security_group" "lambda" {
 }
 
 resource "aws_lambda_function" "verify" {
-  function_name    = "${var.source_cluster_id}-dr-verify"
-  role             = aws_iam_role.lambda.arn
-  runtime          = "python3.12"
-  architectures    = ["arm64"]
-  handler          = "handler.lambda_handler"
-  filename         = data.archive_file.verify.output_path
-  source_code_hash = data.archive_file.verify.output_base64sha256
-  timeout          = 300
-  memory_size      = 512
-  kms_key_arn      = var.kms_key_arn
-  layers           = [local.adot_layer_arn] # ADOT: OTel SDK + collector extension
+  #checkov:skip=CKV_AWS_116:Invoked synchronously by Step Functions, which retries and catches failures; a DLQ only applies to async invokes.
+  #checkov:skip=CKV_AWS_272:Bundle is built in CI from reviewed source; AWS Signer profile is tracked as follow-up hardening.
+  function_name                  = "${var.source_cluster_id}-dr-verify"
+  reserved_concurrent_executions = 1 # one drill at a time
+  role                           = aws_iam_role.lambda.arn
+  runtime                        = "python3.12"
+  architectures                  = ["arm64"]
+  handler                        = "handler.lambda_handler"
+  filename                       = data.archive_file.verify.output_path
+  source_code_hash               = data.archive_file.verify.output_base64sha256
+  timeout                        = 300
+  memory_size                    = 512
+  kms_key_arn                    = var.kms_key_arn
+  layers                         = [local.adot_layer_arn] # ADOT: OTel SDK + collector extension
 
   # Private (app-tier) subnets: the function needs egress to AMP for metrics
   # and reaches the restored cluster through an explicit SG rule (see outputs).
@@ -144,6 +144,8 @@ resource "aws_iam_role" "sfn" {
 }
 
 resource "aws_iam_role_policy" "sfn" {
+  #checkov:skip=CKV_AWS_355:Describe/Restore/Create need several RDS resource types (source cluster, subnet group, parameter groups) and X-Ray/log-delivery APIs only support "*". DESTRUCTIVE actions are scoped to the drill cluster in the statement below.
+  #checkov:skip=CKV_AWS_290:Same as above: create/restore are broad by necessity; deletes are pinned to the drill cluster ARNs.
   role = aws_iam_role.sfn.id
   policy = jsonencode({
     Version = "2012-10-17"
@@ -155,11 +157,19 @@ resource "aws_iam_role_policy" "sfn" {
           "rds:DescribeDBInstances",
           "rds:RestoreDBClusterToPointInTime",
           "rds:CreateDBInstance",
-          "rds:DeleteDBInstance",
-          "rds:DeleteDBCluster",
           "rds:AddTagsToResource",
         ]
         Resource = "*"
+      },
+      {
+        # Least privilege where it matters most: this role can only ever
+        # delete the drill's throwaway cluster, never the production one.
+        Effect = "Allow"
+        Action = ["rds:DeleteDBInstance", "rds:DeleteDBCluster"]
+        Resource = [
+          "arn:aws:rds:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:cluster:${local.drill_cluster}",
+          "arn:aws:rds:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:db:${local.drill_cluster}-0",
+        ]
       },
       {
         Effect   = "Allow"
@@ -194,6 +204,7 @@ resource "aws_cloudwatch_log_group" "sfn" {
 }
 
 resource "aws_sfn_state_machine" "drill" {
+  #checkov:skip=CKV_AWS_285:Logging is on (level ERROR) but execution data is deliberately excluded: it carries DB endpoints and connection metadata. Full history stays in the Step Functions console for 90 days.
   name     = "${var.source_cluster_id}-dr-drill"
   role_arn = aws_iam_role.sfn.arn
   definition = templatefile("${path.module}/state-machine.asl.json", {
@@ -244,6 +255,7 @@ resource "aws_iam_role" "scheduler" {
 }
 
 resource "aws_scheduler_schedule" "weekly" {
+  #checkov:skip=CKV_AWS_297:Schedule payload is a constant {"trigger":"schedule"} with no sensitive data; AWS-owned key is sufficient.
   name                         = "${var.source_cluster_id}-dr-drill"
   schedule_expression          = var.schedule_expression
   schedule_expression_timezone = "America/New_York"

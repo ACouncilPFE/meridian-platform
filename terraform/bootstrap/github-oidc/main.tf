@@ -92,6 +92,15 @@ resource "aws_iam_role" "apply" {
 # Boundary: even the apply role cannot touch CloudTrail, the state bucket
 # deletion, or KMS key deletion.
 resource "aws_iam_policy" "boundary" {
+  #checkov:skip=CKV_AWS_62:Permissions boundary, not a grant. Effective access = intersection with the attached PowerUserAccess policy.
+  #checkov:skip=CKV_AWS_63:Permissions boundary pattern: allow-all ceiling plus explicit denies.
+  #checkov:skip=CKV_AWS_286:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV_AWS_287:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV_AWS_288:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV_AWS_289:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV_AWS_290:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV_AWS_355:Boundary only caps permissions; it grants nothing on its own.
+  #checkov:skip=CKV2_AWS_40:Boundary only caps permissions; it grants nothing on its own.
   name = "gha-apply-boundary"
   policy = jsonencode({
     Version = "2012-10-17"

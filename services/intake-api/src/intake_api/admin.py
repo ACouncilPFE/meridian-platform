@@ -89,17 +89,20 @@ def main() -> None:
     app_role = os.environ.get("APP_DB_USER", "intake_api")
     verifier_role = os.environ.get("VERIFIER_DB_USER", "dr_verifier")
 
-    # Keyword args (not a DSN string) so any character in the password is safe.
-    conn_kwargs = dict(
-        host=host,
-        dbname=db,
-        user=owner,
-        password=password,
-        sslmode="verify-full",
-        sslrootcert=RDS_CA_BUNDLE,
-        connect_timeout=60,
-    )
-    with psycopg.connect(autocommit=True, **conn_kwargs) as conn:
+    def connect() -> psycopg.Connection:
+        # Keyword args (not a DSN string) so any character in the password is safe.
+        return psycopg.connect(
+            host=host,
+            dbname=db,
+            user=owner,
+            password=password,
+            sslmode="verify-full",
+            sslrootcert=RDS_CA_BUNDLE,
+            connect_timeout=60,
+            autocommit=True,
+        )
+
+    with connect() as conn:
         for stmt in role_statements(app_role, verifier_role):
             conn.execute(stmt)
     log.info("login roles ensured")
@@ -110,7 +113,7 @@ def main() -> None:
     command.upgrade(Config("/app/alembic.ini"), "head")
     log.info("migrations at head")
 
-    with psycopg.connect(autocommit=True, **conn_kwargs) as conn:
+    with connect() as conn:
         for stmt in grant_statements(owner, app_role, verifier_role):
             conn.execute(stmt)
     log.info("grants applied")

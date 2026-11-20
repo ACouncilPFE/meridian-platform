@@ -83,6 +83,7 @@ module "intake_api" {
   cpu                       = 256
   memory                    = 512
   data_classification       = "synthetic"
+  alb_deletion_protection   = false
 
   environment_variables = {
     DB_HOST           = module.aurora.writer_endpoint
