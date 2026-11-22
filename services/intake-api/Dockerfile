@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 # Multi-stage build: compilers and build deps never reach the runtime image.
 
-FROM python:3.12-slim AS build
+FROM python:3.15-slim AS build
 ENV PIP_NO_CACHE_DIR=1 PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /src
 RUN python -m venv /opt/venv
@@ -10,7 +10,7 @@ COPY pyproject.toml ./
 COPY src ./src
 RUN pip install .
 
-FROM python:3.12-slim AS runtime
+FROM python:3.15-slim AS runtime
 # Patch OS packages, then drop to an unprivileged user (UID matches the
 # ECS task definition `user = "10001"`; root FS is mounted read-only).
 RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/* \
