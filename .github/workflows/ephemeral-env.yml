@@ -30,12 +30,12 @@ jobs:
       name: pr-${{ github.event.pull_request.number }}
       url: ${{ steps.out.outputs.url }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: aws-actions/amazon-ecr-login@7290e214a610b32bc0eef81748948b6d466a8783 # v2.2.0
         id: ecr
       - name: Build & push image (tagged by commit, deployed by digest)
         id: img
@@ -44,7 +44,7 @@ jobs:
           docker build -t "$IMAGE:${{ github.sha }}" services/intake-api
           docker push "$IMAGE:${{ github.sha }}"
           echo "ref=$(docker inspect --format='{{index .RepoDigests 0}}' "$IMAGE:${{ github.sha }}")" >> "$GITHUB_OUTPUT"
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with: { terraform_version: "${{ env.TF_VERSION }}", terraform_wrapper: false }
       - name: Apply
         working-directory: terraform/envs/ephemeral
@@ -63,7 +63,7 @@ jobs:
           python3 scripts/seed_synthetic.py --url "${{ steps.out.outputs.url }}" --count 200
       - name: Smoke test
         run: scripts/ci/smoke.sh "${{ steps.out.outputs.url }}"
-      - uses: marocchino/sticky-pull-request-comment@v2
+      - uses: marocchino/sticky-pull-request-comment@5770ad5eb8f42dd2c4f34da00c94c5381e49af88 # v3.0.5
         with:
           header: preview
           message: |
@@ -75,12 +75,12 @@ jobs:
     if: vars.AWS_DEPLOY_ENABLED == 'true' && github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with: { terraform_version: "${{ env.TF_VERSION }}" }
       - working-directory: terraform/envs/ephemeral
         run: |
@@ -96,12 +96,12 @@ jobs:
     if: vars.AWS_DEPLOY_ENABLED == 'true' && github.event_name == 'schedule'
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
         with:
           role-to-assume: ${{ vars.AWS_EPHEMERAL_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
-      - uses: hashicorp/setup-terraform@v3
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
         with: { terraform_version: "${{ env.TF_VERSION }}" }
       - name: Destroy expired preview environments
         run: python3 scripts/ci/reap_ephemeral.py --dir terraform/envs/ephemeral
