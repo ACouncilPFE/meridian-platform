@@ -4,7 +4,7 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.80" # Aurora Serverless v2 scale-to-zero
+      version = "~> 6.73" # Aurora Serverless v2 scale-to-zero
     }
     archive = {
       source  = "hashicorp/archive"
