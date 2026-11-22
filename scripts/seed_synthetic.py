@@ -26,7 +26,7 @@ def make(i: int, rng: random.Random) -> dict:
         "external_ref": f"synthetic-{i:06d}",
         "name": f"{first} {last}",
         "date_of_birth": dob.isoformat(),
-        "email": f"{first.lower()}.{last.lower()}.{i}@example.test",
+        "email": f"{first.lower()}.{last.lower()}.{i}@example.com",
         "zip_code": rng.choice(ZIPS),
     }
 

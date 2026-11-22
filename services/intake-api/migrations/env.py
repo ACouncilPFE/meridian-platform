@@ -29,8 +29,13 @@ def run_migrations_online() -> None:
     engine = build_engine(Settings())
     with engine.connect() as connection:
         if connection.dialect.name == "postgresql":
+            # Session-level settings (they survive the commit below).
             connection.execute(text("SET lock_timeout = '5s'"))
             connection.execute(text("SET statement_timeout = '15min'"))
+            # SQLAlchemy 2.0 autobegins a transaction on the first execute().
+            # Commit it now, or Alembic runs inside it and every migration is
+            # silently rolled back when the connection closes.
+            connection.commit()
         context.configure(connection=connection, target_metadata=target_metadata, transaction_per_migration=True)
         with context.begin_transaction():
             context.run_migrations()
